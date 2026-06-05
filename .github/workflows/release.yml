@@ -1,0 +1,140 @@
+name: Release
+
+# Build the NexRv CLI for Linux x86-64 and arm64.
+#  * Every push to main builds both binaries and uploads them as per-commit
+#    workflow artifacts (download them from that commit's run under the
+#    Actions tab > the run > Artifacts).
+#  * Pushing a version tag (e.g. `git tag v1.2.0 && git push origin v1.2.0`)
+#    additionally publishes the binaries to a GitHub Release.
+# Also runnable manually via the Actions tab (build only, no release).
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            cc: gcc
+            apt: ''
+          - arch: arm64
+            cc: aarch64-linux-gnu-gcc
+            apt: gcc-aarch64-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # so `git describe` can see tags for the version string
+
+      - name: Install cross toolchain
+        if: matrix.apt != ''
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.apt }}
+
+      # Dynamically linked against the system glibc. NexRv only uses libc
+      # (stdio/stdlib/string/inttypes), so the only runtime dependency is a
+      # glibc at least as new as the build host's. We avoid static linking on
+      # purpose: a statically linked glibc binary carries LGPL relinking
+      # obligations, whereas the dynamically linked binary is cleanly ISC.
+      - name: Build
+        run: make CC=${{ matrix.cc }}
+
+      - name: Stage and check artifact
+        run: |
+          mkdir -p dist
+          cp NexRv.exe dist/NexRv-linux-${{ matrix.arch }}
+          file dist/NexRv-linux-${{ matrix.arch }}
+
+      # Smoke-test the natively runnable build. Running with no arguments
+      # prints usage and exits 1, which is the expected behaviour.
+      - name: Smoke test (x86_64 only)
+        if: matrix.arch == 'x86_64'
+        run: |
+          ./dist/NexRv-linux-x86_64 && rc=0 || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            echo "Expected exit code 1, got $rc"
+            exit 1
+          fi
+
+      # Per-commit downloadable binary. The artifact (container) name carries
+      # the commit SHA so downloads are self-identifying; the file inside keeps
+      # the clean name NexRv-linux-<arch> that the release job uploads.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NexRv-linux-${{ matrix.arch }}-${{ github.sha }}
+          path: dist/NexRv-linux-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 90
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write   # required to create the release and upload assets
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # Idempotent: create the release if it does not exist yet, otherwise
+      # upload the binaries to the existing release (overwriting same-named
+      # assets). This tolerates a release created manually before the tag
+      # push, and safe workflow re-runs.
+      - name: Create release and upload binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "Release ${GITHUB_REF_NAME} exists - uploading assets."
+            gh release upload "${GITHUB_REF_NAME}" \
+              dist/NexRv-linux-x86_64 \
+              dist/NexRv-linux-arm64 \
+              --clobber
+          else
+            echo "Creating release ${GITHUB_REF_NAME}."
+            gh release create "${GITHUB_REF_NAME}" \
+              dist/NexRv-linux-x86_64 \
+              dist/NexRv-linux-arm64 \
+              --title "${GITHUB_REF_NAME}" \
+              --generate-notes
+          fi
+
+  rolling:
+    name: Refresh 'latest' pre-release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'   # every push to main, not on tags
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # Maintain a single rolling 'latest' pre-release that always carries the
+      # newest main build. Delete + recreate (incl. the tag) so the release,
+      # its tag, and the assets all point at the current commit.
+      - name: Update 'latest' pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete latest --cleanup-tag --yes 2>/dev/null || true
+          gh release create latest \
+            dist/NexRv-linux-x86_64 \
+            dist/NexRv-linux-arm64 \
+            --title "Latest main build" \
+            --notes "Rolling build from the latest commit on main (${GITHUB_SHA}). Pre-release — for a fixed version use a tagged release." \
+            --prerelease \
+            --target "${GITHUB_SHA}"

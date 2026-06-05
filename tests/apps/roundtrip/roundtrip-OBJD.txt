@@ -1,0 +1,23 @@
+
+roundtrip.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text:
+
+00001000 <_start>:
+    1000:	00300293          	li	t0,3
+    1004:	00000313          	li	t1,0
+
+00001008 <loop>:
+    1008:	00130313          	add	t1,t1,1
+    100c:	fff28293          	add	t0,t0,-1
+    1010:	fe029ce3          	bnez	t0,1008 <loop>
+    1014:	008000ef          	jal	101c <func>
+    1018:	00c0006f          	j	1024 <done>
+
+0000101c <func>:
+    101c:	00030513          	mv	a0,t1
+    1020:	00008067          	ret
+
+00001024 <done>:
+    1024:	0000006f          	j	1024 <done>
