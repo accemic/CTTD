@@ -63,10 +63,10 @@ for opt in "-nobhm" "-cs 0 -rpt 0" "-cs 8 -rpt 2"; do
 done
 
 #############################################################################
-# 2. C-Trace capture regression: 'combined' testbench
+# 2. CEDARtools.TraceEncoder capture regression: 'combined' testbench
 #
-# combined.nex is the raw Nexus trace captured from the C-Trace 'combined'
-# testbench (tests/combined/01_all in the C-Trace repo); combined.pcinfo is
+# combined.nex is the raw Nexus trace captured from the CEDARtools.TraceEncoder 'combined'
+# testbench (tests/combined/01_all in the CEDARtools.TraceEncoder repo); combined.pcinfo is
 # the matching program info. It mixes instruction trace (SYNC / branch /
 # call / return) with data-acquisition events (MEMREAD / MEMWRITE). The
 # golden CTXP text was produced by NexRv and cross-checked set-equal against
@@ -90,7 +90,7 @@ compare_files "$CombOut" "$CombDir/combined.expected.ctxp.txt" "Combined capture
 # Exercises all DataAcquisition command kinds (PC_CURR, PC_CURR_LAST,
 # DIRECT_DATA, DATA, DADDR, DATA_DADDR, the four counters) plus the derived
 # SYNC / MEMREAD / MEMWRITE / DAQ_* CTXP events. Golden output was verified
-# against the C-Trace testbench (tip.txt) and ctxp_lint.py.
+# against the CEDARtools.TraceEncoder testbench (tip.txt) and ctxp_lint.py.
 #############################################################################
 
 CtxpDir=ctxp/csr_cap

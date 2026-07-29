@@ -186,7 +186,7 @@ static int usage(const char *err)
     error(err);
   }
   printf("\n");
-  printf("NexRv [c-trace fork] v2.0.0 (2026/06/01)\n");
+  printf("NexRv [CEDARtools.TraceEncoder fork] v2.0.0 (2026/06/01)\n");
   printf("Usage:\n");
   printf("  NexRv -dump <nex> [<dump>] [-msg|-none] - dump Nexus file\n");
   printf("  NexRv -deco <nex> -pcinfo <info> -pcout <pco> [-stat|-full|-all|-msg|-none] - decode trace\n");

@@ -1,13 +1,13 @@
 > Fork of https://github.com/riscv-non-isa/riscv-nexus-trace/tree/main/refcode/c
 
-# Nexus Trace TG reference code - for C-Trace
+# Nexus Trace TG reference code - for CEDARtools.TraceEncoder
 Reference code for RISC-V Nexus Trace TG recommendations.
 
-## Updated 2026/06/01 - C-trace fork
+## Updated 2026/06/01 - CEDARtools.TraceEncoder fork
 
-This fork adds decoding capabilities related to the open [C-Trace encoder RTL implementation](https://github.com/accemic/c-trace).
+This fork adds decoding capabilities related to the open [CEDARtools.TraceEncoder RTL implementation](https://github.com/accemic/TraceEncoder).
 
-- Add [CTXP](https://github.com/accemic/c-trace-export-format) trace export
+- Add [CTXP](https://github.com/accemic/CTXP-format) trace export
 - Add data message decoding
 - Add optional SRC field decoding/encoding
 - Pass timestamps (absolut and relative mode)
@@ -21,7 +21,7 @@ This fork adds decoding capabilities related to the open [C-Trace encoder RTL im
 Run the regression suite with [tests/run_tests.sh](tests/run_tests.sh) (needs only the built `NexRv.exe`):
 
 - **Assembler round-trip** — a tiny hand-written RISC-V program ([tests/apps/roundtrip/roundtrip.S](tests/apps/roundtrip/roundtrip.S)) is converted to a trace by the encoder, decoded again, and the decoded PC stream is checked byte-for-byte against the original execution. Repeated for several encoder compression levels.
-- **C-Trace capture regression** — real Nexus traces captured from the open [C-Trace](https://github.com/accemic/c-trace) testbenches (`combined` and `csr_cap`) are decoded to CTXP and compared against golden references cross-checked against the testbenches' own expected output.
+- **CEDARtools.TraceEncoder capture regression** — real Nexus traces captured from the open [CEDARtools.TraceEncoder](https://github.com/accemic/TraceEncoder) testbenches (`combined` and `csr_cap`) are decoded to CTXP and compared against golden references cross-checked against the testbenches' own expected output.
 
 ### *Acknowledgment - TRISTAN EU project*
 
