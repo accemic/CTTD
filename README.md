@@ -166,7 +166,6 @@ Run the regression suite with [tests/run_tests.sh](tests/run_tests.sh) (needs on
 | Repository | Relation |
 |---|---|
 | [accemic/TraceEncoder](https://github.com/accemic/TraceEncoder) — CEDARtools.TraceEncoder | the encoder IP this decoder is the reference for; pins CTTD by sha256 |
-| [accemic/TraceEncoderDemos](https://github.com/accemic/TraceEncoderDemos) | pre-built KV260 demo bundles of that encoder; the board-side decode runs `cttd-linux-arm64` |
 | [accemic/CTXP-format](https://github.com/accemic/CTXP-format) | the specification of the CTXP export this tool writes |
 | `NexRv-for-TraceEncoder` | this repository's previous name: the `v2.0.0` line at the start of its git history, published before the rename to CTTD |
 | [riscv-non-isa/riscv-nexus-trace](https://github.com/riscv-non-isa/riscv-nexus-trace) | upstream: the N-Trace specification and the NexRv reference code |
