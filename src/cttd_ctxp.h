@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Accemic Technologies GmbH
+// SPDX-License-Identifier: ISC
 // vim: set ts=4 et:
 // -*- indent-tabs-mode: t; tab-width: 4 -*-
 /*
@@ -16,37 +18,17 @@
 * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
-#include "NexRvExport.h"
+/*
+ * @brief   Exporter for CTXP trace file (.ctxp and .ctxp.txt).
+ *
+ * Enabled via environment variables:
+ *   - CTXP_TRACEFILE       -> binary .ctxp
+ *   - CTXP_TEXT_TRACEFILE  -> text   .ctxp.txt
+ */
 
-#include <stddef.h>
+#ifndef ROOT_NEXRVCTXP_H
+#define ROOT_NEXRVCTXP_H
 
-#define NEXRV_EXPORT_MAX_CALLBACKS 8
+// Intentionally empty. Exporter is activated via constructors.
 
-typedef struct ExportSlot {
-  NexRvExportCallback cb;
-  void *user_data;
-} ExportSlot;
-
-static ExportSlot g_slots[NEXRV_EXPORT_MAX_CALLBACKS];
-static int g_slot_count = 0;
-
-int nexrv_export_register(NexRvExportCallback cb, void *user_data)
-{
-  if (cb == NULL) return 0;
-  if (g_slot_count >= NEXRV_EXPORT_MAX_CALLBACKS) return 0;
-
-  g_slots[g_slot_count].cb = cb;
-  g_slots[g_slot_count].user_data = user_data;
-  g_slot_count++;
-  return 1;
-}
-
-void nexrv_export_emit(const NexRvExportEvent *event)
-{
-  if (event == NULL) return;
-  for (int i = 0; i < g_slot_count; i++)
-  {
-	if (g_slots[i].cb != NULL)
-	  g_slots[i].cb(event, g_slots[i].user_data);
-  }
-}
+#endif // ROOT_NEXRVCTXP_H

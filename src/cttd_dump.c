@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2020 IAR Systems AB
+// SPDX-FileCopyrightText: 2026 Accemic Technologies GmbH
+// SPDX-License-Identifier: ISC
 /*
 * Copyright (c) 2020 IAR Systems AB.
 * Copyright (c) 2026 Accemic Technologies GmbH.
@@ -18,7 +21,7 @@
 */
 
 //****************************************************************************
-// File NexRvDump.c  - Nexus RISC-V Trace dumper
+// File cttd_dump.c  - Nexus RISC-V Trace dumper
 
 // Code below is written in plain C-code.
 // It was compiled using VisualC, GNU and IAR C/C++ compiler.
@@ -31,8 +34,8 @@
 #include <string.h> //  For 'strcmp', 'strchr' 
 #include <ctype.h>  //  For 'isspace/isxdigit' etc.
 
-#include "NexRv.h"    //  Common NEXUS_... #define (RISC-V specific subset)
-#include "NexRvMsg.h" //  Definition of Nexus messages
+#include "cttd.h"    //  Common NEXUS_... #define (RISC-V specific subset)
+#include "cttd_msg.h" //  Definition of Nexus messages
 
 // Decoder works on two files and dumper on first file
 extern FILE *fNex; // Nexus messages (binary bytes)
@@ -205,8 +208,10 @@ int NexusDump(FILE *f, int disp)
   int msgCnt    = 0;
   int msgBytes  = 0;
   int msgErrors = 0;
+  int msgReserved = 0;  // Reserved/unknown-TCODE messages skipped (N-Trace contract)
   int idleCnt   = 0;
   int srcPending = 0;
+  int skipReserved = 0; // While set: discard bytes until MSEO=='11' (EndOfMessage)
 
   NexusBitBufferInit(&fldBuf);
 
@@ -250,9 +255,20 @@ int NexusDump(FILE *f, int disp)
       return -1;  // Error return
     }
 
+    if (skipReserved)
+    {
+      // Consuming the remainder of a reserved/unknown-TCODE message (see
+      // below): the MDO/MSEO framing is self-delimiting, so discard bytes
+      // until EndOfMessage (MSEO=='11').
+      msgBytes++;
+      if (disp & 1) fprintf(f, " (reserved message - skipped)\n");
+      if (mseo == 0x3) skipReserved = 0; // EndOfMessage reached
+      continue;
+    }
+
     if (fldDef < 0)
     {
-      if (mseo == 0x3) 
+      if (mseo == 0x3)
       {
         if (disp & 1) fprintf(f, " IDLE\n");
         idleCnt++;
@@ -279,9 +295,20 @@ int NexusDump(FILE *f, int disp)
 
       if (fldDef < 0)
       {
-        printf(" ERROR: Message with TCODE=%d is not defined for RISC-V\n", tcode);
-        NexusBitBufferTerm(&fldBuf);
-        return -3;
+        // RISC-V N-Trace 1.0 (ratified): TCODEs the spec does not adopt are
+        // "Reserved for future extensions", and reserved messages "should be
+        // ignored by decoders interested in program flow only" (they may be
+        // seen when trace capture is corrupted). The MDO/MSEO framing is
+        // self-delimiting, so report and skip the whole message (all bytes
+        // up to MSEO=='11') instead of aborting the dump.
+        if (disp & 3) fprintf(f, " TCODE[6]=%d (MSG #%d) - RESERVED (skipped)\n", tcode, msgCnt);
+        printf(" WARNING: Reserved/unknown TCODE=%u (MSG #%d) - message skipped\n",
+               tcode, msgCnt);
+        msgReserved++;
+        msgCnt++;
+        msgBytes++;
+        skipReserved = 1;
+        continue;
       }
 
       currentTcode = tcode;
@@ -289,7 +316,7 @@ int NexusDump(FILE *f, int disp)
       msgBytes++;
 
       fldDef++;
-      srcPending = (nexrv_conf_src_bits > 0);
+      srcPending = (cttd_conf_src_bits > 0);
       if (!NexusBitBufferAppend(&fldBuf, mdo >> NEXUS_FLDSIZE_TCODE, 6 - NEXUS_FLDSIZE_TCODE))
       {
         printf(" ERROR: Out of memory while accumulating message bits\n");
@@ -319,12 +346,12 @@ int NexusDump(FILE *f, int disp)
     }
 
     // Extract SRC field (between TCODE and message-specific fields)
-    if (srcPending && fldBuf.bit_count >= nexrv_conf_src_bits)
+    if (srcPending && fldBuf.bit_count >= cttd_conf_src_bits)
     {
-      unsigned long long srcVal = NexusBitBufferPeekU64(&fldBuf, nexrv_conf_src_bits)
-                                  & NexusFieldMask(nexrv_conf_src_bits);
-      if (disp & 1) fprintf(f, " SRC[%d]=0x%llx", nexrv_conf_src_bits, srcVal);
-      NexusBitBufferDiscardLowBits(&fldBuf, nexrv_conf_src_bits);
+      unsigned long long srcVal = NexusBitBufferPeekU64(&fldBuf, cttd_conf_src_bits)
+                                  & NexusFieldMask(cttd_conf_src_bits);
+      if (disp & 1) fprintf(f, " SRC[%d]=0x%llx", cttd_conf_src_bits, srcVal);
+      NexusBitBufferDiscardLowBits(&fldBuf, cttd_conf_src_bits);
       srcPending = 0;
     }
 
@@ -394,6 +421,7 @@ int NexusDump(FILE *f, int disp)
   if (disp & 4)
   {
     printf("\nStat: %d bytes, %d idles, %d messages, %d error messages", msgBytes, idleCnt, msgCnt, msgErrors);
+    if (msgReserved > 0) printf(", %d reserved skipped", msgReserved);
     if (msgCnt > 0) printf(", %.2lf bytes/message", ((double)msgBytes) / msgCnt);
     printf("\n");
   }
@@ -403,4 +431,4 @@ int NexusDump(FILE *f, int disp)
 }
 
 //****************************************************************************
-// End of NexRvDump.c file
+// End of cttd_dump.c file

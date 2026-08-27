@@ -1,0 +1,23 @@
+Provenance notice for examples/t1/test.elf
+==========================================
+
+This prebuilt RISC-V example binary is redistributed unchanged from the
+RISC-V Nexus Trace TG reference code (riscv-non-isa/riscv-nexus-trace,
+refcode/c/examples/t1; ISC; Copyright (c) 2020 IAR Systems AB). It is a
+test INPUT for the decoder, not a build product of this repository, and it
+is not required to use the decoder: examples/t1/README.md describes how to
+rebuild it from source with a RISC-V GNU toolchain.
+
+Besides the ISC test program the binary links code from
+
+  * xrle (https://github.com/algorithm314/xrle) -- BSD-2-Clause;
+  * the SiFive startup files entry.S (Apache-2.0) and crt0.S
+    (the FreeBSD licence, SPDX BSD-2-Clause-Views), both next to it with their notices;
+  * newlib, the C library the toolchain linked in, whose components carry
+    several BSD-style licences. Those texts are NOT reproduced here.
+
+PENDING (legal review): whether this binary may be redistributed as-is with
+the newlib licence texts absent is a question this repository does not
+answer. Until it is answered, treat examples/t1/test.elf as test data of
+unresolved provenance; the decoder itself and every other file are
+unaffected.

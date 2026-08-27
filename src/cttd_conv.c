@@ -1,5 +1,10 @@
+// SPDX-FileCopyrightText: 2020 IAR Systems AB
+// SPDX-FileCopyrightText: 2026 Accemic Technologies GmbH
+// SPDX-License-Identifier: ISC
 /*
 * Copyright (c) 2020 IAR Systems AB.
+* Copyright (c) 2026 Accemic Technologies GmbH.
+* Modified from the RISC-V Nexus Trace TG reference code.
 *
 * Permission to use, copy, modify, and distribute this software for any
 * purpose with or without fee is hereby granted, provided that the above
@@ -15,7 +20,7 @@
 */
 
 //****************************************************************************
-// File NexRvConv.c  - Nexus RISC-V Trace converter (to aid decoding)
+// File cttd_conv.c  - Nexus RISC-V Trace converter (to aid decoding)
 
 // Code below is written in plain C-code.
 // It was compiled using VisualC, GNU and IAR C/C++ compiler.
@@ -29,9 +34,9 @@
 #include <ctype.h>  //  For 'isspace/isxdigit' etc.
 #include <inttypes.h>   //  For scan formats SCNx64
 
-#include "NexRv.h"  //  Common NEXUS_... #define (RISC-V specific subset)
+#include "cttd.h"  //  Common NEXUS_... #define (RISC-V specific subset)
 
-#include "NexRvInfo.h"  // We need info 
+#include "cttd_info.h"  // We need info 
 
 // It converts GNU-objdump file (with -d option) to info-file
 
@@ -92,9 +97,57 @@ int ConvRtlTrace(FILE *fIn, FILE *fOut)
   return nInstr;
 }
 
+// --- rd-aware jal/jalr classification (2026-07-18, Accemic) ---------------------------------
+// The MicroBlaze-V board flow disassembles with `-M no-aliases,numeric` (required so the RTL itype
+// decoder sees rd). In that form jumps and returns appear as raw jal/jalr, NOT as j/ret/jr
+// pseudos -- so classifying every jal as a call and every jalr as an indirect call is wrong:
+//   jal  x0,<a>      is an unconditional JUMP (rd=zero, no link)     -> must NOT push a frame
+//   jalr x0,<o>(x1)  is a RETURN (ret; rd=zero, base=ra)            -> pops the call stack
+//   jalr x0,<o>(xN)  is an indirect JUMP (jr; rd=zero, base!=ra)    -> no stack op
+// Misclassifying `jal x0` as a call left a spurious return address on the stack that a later
+// `mret` popped -> "call-stack target ... != trace target" abort on programs with calls+traps.
+// instr points at the mnemonic field, e.g. "jal\tx0,10 <...>" / "jalr\tx0,0(x1)".
+
+// Destination register number (the xN right after the mnemonic), or -1 if not parseable.
+static int GnuRdNum(const char *instr)
+{
+  const char *p = instr;
+  while (*p != '\0' && *p != '\t' && *p != ' ') p++;   // skip mnemonic
+  while (*p == '\t' || *p == ' ') p++;                  // skip separator(s)
+  if (*p != 'x') return -1;
+  p++;
+  int r = 0, any = 0;
+  while (*p >= '0' && *p <= '9') { r = r * 10 + (*p - '0'); p++; any = 1; }
+  return any ? r : -1;
+}
+
+// For jalr "<rd>,<off>(xBASE)": the base register number inside the parentheses, or -1.
+static int GnuJalrBaseNum(const char *instr)
+{
+  const char *p = instr;
+  while (*p != '\0' && *p != '(') p++;
+  if (*p != '(') return -1;
+  p++;
+  if (*p != 'x') return -1;
+  p++;
+  int r = 0, any = 0;
+  while (*p >= '0' && *p <= '9') { r = r * 10 + (*p - '0'); p++; any = 1; }
+  return any ? r : -1;
+}
+
+extern int conf_SijumpConv; // cttd.c (-conv ... -sijump)
+
 int ConvGnuObjdump(FILE *fObjd, FILE *fPcInfo)
 {
   char line[1000];
+
+  // Accemic sijump (-sijump): track the previous instruction line so an
+  // ADJACENT auipc/lui + jalr pair can be classified with a computed target
+  // (mirrors the encoder-side adapter rule in mbv_to_ctrace_tip).
+  int            sijPrevUType = 0;   // previous instr was auipc/lui with rd != x0
+  unsigned int   sijPrevRd    = 0;
+  Nexus_TypeAddr sijPrevVal   = 0;   // value the U-type wrote into rd
+  Nexus_TypeAddr sijPrevEnd   = 0;   // addr + size of the previous instr
 
   int nInstr = 0;
   while (fgets(line, sizeof(line), fObjd) != NULL)
@@ -139,56 +192,140 @@ int ConvGnuObjdump(FILE *fObjd, FILE *fPcInfo)
 
     if (disp)
     {
-      printf("addr=0x%lX,code=0x%X,size=%d,instr=%s\n", addr, code, size, instr);
+      printf("addr=0x%" PRIX64 ",code=0x%X,size=%d,instr=%s\n", addr, code, size, instr);
     }
 
     // Determine instruction type based on opcode of instruction
     const char *iType = "L";
-    if (instr[0] == 'j' || (instr[0] == 'b' && instr[4] != 'i'))
+    if (instr[0] == 'c' && instr[1] == '.')
+    {
+      // Compressed control flow (RV32C, -M no-aliases,numeric): c.j/c.jal/c.jr/c.jalr/c.beqz/c.bnez.
+      // Only relevant with C-extension enabled (G7); MVP is RV32 without C. c.jal/c.jalr always link
+      // to ra (call); c.j does not (jump); c.jr x1 is a return, c.jr xN is an indirect jump.
+      const char *m = instr + 2;
+      if      (m[0] == 'j' && m[1] == 'a' && m[2] == 'l' && m[3] == 'r') iType = "CI"; // c.jalr
+      else if (m[0] == 'j' && m[1] == 'a' && m[2] == 'l')                iType = "CD"; // c.jal
+      else if (m[0] == 'j' && m[1] == 'r') iType = (GnuRdNum(instr) == 1) ? "R" : "JI"; // c.jr x1=ret
+      else if (m[0] == 'j')                                             iType = "JD"; // c.j
+      else if (m[0] == 'b' && (m[1] == 'e' || m[1] == 'n'))             iType = "BD"; // c.beqz/c.bnez
+    }
+    else if (instr[0] == 'j' || (instr[0] == 'b' && instr[4] != 'i'))
       // That 'i' for for bseti/bclri/bexti/binvi - see https://github.com/riscv/riscv-opcodes/blob/master/rv32_zbs
     {
       // "j <a>" or "jal <r>,<a>" or "jr <r>" or "jalr <r>"
       // "b?? ...<a>
       if (instr[0] =='j' && instr[1] == 'r')
       {
-        // jr does not have an address
+        // jr does not have an address (alias form, if aliases are enabled)
         iType = "JI"; // Jump indirect
       }
       else
       if (instr[0] == 'j' && instr[1] == 'a' && instr[3] == 'r')
       {
-        // jalr does not have an adrress either
-        iType = "CI"; // Call indirect
+        // jalr <rd>,<off>(<base>): rd distinguishes call from return/indirect-jump.
+        int rd = GnuRdNum(instr);
+        if (rd == 0)
+        {
+          int base = GnuJalrBaseNum(instr);
+          iType = (base == 1) ? "R" : "JI"; // jalr x0,off(x1)=ret ; jalr x0,off(xN)=jr
+        }
+        else
+        {
+          iType = "CI"; // Call indirect (linked)
+        }
       }
       else
       {
         if (instr[0] == 'b')                    iType = "BD"; // Branch direct
-        if (instr[0] == 'j' && instr[1] != 'a') iType = "JD"; // Jump direct
-        if (instr[0] == 'j' && instr[1] == 'a') iType = "CD"; // Call direct
+        if (instr[0] == 'j' && instr[1] != 'a') iType = "JD"; // Jump direct (j, alias)
+        if (instr[0] == 'j' && instr[1] == 'a')
+        {
+          // jal <rd>,<a>: rd=x0 is an unconditional jump (no link), else a call.
+          iType = (GnuRdNum(instr) == 0) ? "JD" : "CD";
+        }
       }
     }
     else
     {
-      if (instr[0] == 'm') instr++; // To allow 'mret'
-      if (instr[0] == 'r' && instr[1] == 'e' && instr[2] == 't')
+      // System traps are stack-neutral: their target comes from the trace, not the call stack.
+      //   mret/sret: trap RETURN -> returns to mepc/sepc (mepc+4 for ecall, but the preempted PC
+      //              for interrupts) -- the call stack cannot predict that, so classify as an
+      //              indirect JUMP (JI): use the trace target, do NOT pop/check the call stack.
+      //   ecall/ebreak: trap SOURCE -> redirect to the handler (from the trace); no call-stack push.
+      // (With -M no-aliases, 'ret'/'jr' appear as jalr and are classified above; the 'ret' alias
+      //  branch here only matters for alias-form dumps.)
+      if ((instr[0] == 'm' || instr[0] == 's') && instr[1] == 'r'
+          && instr[2] == 'e' && instr[3] == 't')
+        iType = "JI"; // mret / sret
+      else if (instr[0] == 'r' && instr[1] == 'e' && instr[2] == 't')
+        iType = "R";  // ret (alias form only)
+      else if (instr[0] == 'e' && instr[1] == 'c')
+        iType = "JI"; // ecall
+      else if (instr[0] == 'e' && instr[1] == 'b')
+        iType = "JI"; // ebreak
+    }
+
+    // Accemic sijump conversion: a jalr whose base register value is
+    // statically known -- (a) rs1 written by the DIRECTLY preceding
+    // auipc/lui, or (b) rs1 = x0 (constant base; linker relaxation emits
+    // this for absolute low targets) -- becomes a direct call/jump WITH a
+    // computed target, so the decoder can walk encoder-folded sequential
+    // jumps. RETURN (rs1 = link reg) and co-routine forms keep their
+    // dynamic classification, mirroring the adapter.
+    int sijHaveTarget = 0;
+    Nexus_TypeAddr sijTarget = 0;
+    if (conf_SijumpConv && size == 4 && (code & 0x7F) == 0x67)
+    {
+      unsigned int rdN  = (code >> 7)  & 0x1F;
+      unsigned int rs1N = (code >> 15) & 0x1F;
+      int rdLink  = (rdN == 1 || rdN == 5);
+      int rs1Link = (rs1N == 1 || rs1N == 5);
+      int imm12 = ((int)code) >> 20;   // sign-extended I-immediate
+      Nexus_TypeAddr base = 0;
+      int baseKnown = 0;
+      if (rs1N == 0) { base = 0; baseKnown = 1; }
+      else if (sijPrevUType && sijPrevRd == rs1N && sijPrevEnd == addr)
+      { base = sijPrevVal; baseKnown = 1; }
+      if (baseKnown)
       {
-        iType = "R";  // This 'ret' or 'mret'
+        if      (rdLink && !(rs1Link && rs1N != rdN)) iType = "CD"; // uninferable call -> inferable
+        else if (!rdLink && !rs1Link)                 iType = "JD"; // uninferable jump -> inferable
+        else                                          baseKnown = 0; // return / co-routine: dynamic
       }
-      if (instr[0] == 'e' && instr[1] == 'c') iType = "CI"; // ECALL=Call indirect
+      if (baseKnown)
+      {
+        sijTarget = (base + (Nexus_TypeAddr)(long long)imm12)
+                    & ~(Nexus_TypeAddr)1 & 0xFFFFFFFFu;
+        sijHaveTarget = 1;
+      }
     }
 
     // Produce output record
-    fprintf(fPcInfo, "0x%lX,%s%d", addr, iType, size);
+    fprintf(fPcInfo, "0x%" PRIX64 ",%s%d", addr, iType, size);
 
-    if (iType[1] == 'D')
+    if (sijHaveTarget)
+    {
+      fprintf(fPcInfo, ",0x%" PRIX64, sijTarget);
+    }
+    else if (iType[1] == 'D')
     {
       // Direct (branch/call/jump) - we need to extract destination address
       // from parameters. Address may be first or after last ','
       Nexus_TypeAddr destAddr = GetParAddr(instr);
       if (destAddr & 1) return -(30 + (int)destAddr);
-      fprintf(fPcInfo, ",0x%lX", destAddr);
+      fprintf(fPcInfo, ",0x%" PRIX64, destAddr);
     }
     fprintf(fPcInfo, "\n");
+
+    // Track for the next line's pair rule (only 32-bit U-types qualify).
+    sijPrevUType = (size == 4)
+                   && (((code & 0x7F) == 0x17) || ((code & 0x7F) == 0x37))
+                   && (((code >> 7) & 0x1F) != 0);
+    sijPrevRd    = (code >> 7) & 0x1F;
+    sijPrevVal   = (((code & 0x7F) == 0x17)
+                    ? (addr + (Nexus_TypeAddr)(int)(code & 0xFFFFF000))
+                    : (Nexus_TypeAddr)(int)(code & 0xFFFFF000)) & 0xFFFFFFFFu;
+    sijPrevEnd   = addr + (Nexus_TypeAddr)size;
 
     nInstr++;
   }
@@ -237,7 +374,7 @@ int ConvAddInfo(FILE *fIn, FILE *fOut, FILE *fComp)
       return -2;
     }
 
-    if (0) printf("ADDR=0x%lX\n", a); // For debugging ...
+    if (0) printf("ADDR=0x%" PRIX64 "\n", a); // For debugging ...
 
     if (fOut == NULL)
     {
@@ -246,7 +383,7 @@ int ConvAddInfo(FILE *fIn, FILE *fOut, FILE *fComp)
       {
         if (fgets(line, sizeof(line), fComp) == NULL)
         {
-          printf("ERROR: Instruction #%d at address 0x%lX - no PC at PCOUT file.\n", nInstr, a);
+          printf("ERROR: Instruction #%d at address 0x%" PRIX64 " - no PC at PCOUT file.\n", nInstr, a);
           return -5;
         }
         const char *l = line;
@@ -260,7 +397,7 @@ int ConvAddInfo(FILE *fIn, FILE *fOut, FILE *fComp)
 
         if (a != aa)
         {
-          printf("ERROR: Instruction #%d mismatch. Expected 0x%lX, actual 0x%lX\n", nInstr, a, aa);
+          printf("ERROR: Instruction #%d mismatch. Expected 0x%" PRIX64 ", actual 0x%" PRIX64 "\n", nInstr, a, aa);
           return -4;
         }
       }
@@ -275,7 +412,7 @@ int ConvAddInfo(FILE *fIn, FILE *fOut, FILE *fComp)
 #if 1 // This is needed for processing of files generated from Spike (there are 5 instructions at the beginning ...)
       if (nInstr == 0) continue;  // Skip initial wrong addresses ...
 #endif      
-      fprintf(fOut, "ERROR: Instruction at address 0x%lX not found in <info-file>\n", a);
+      fprintf(fOut, "ERROR: Instruction at address 0x%" PRIX64 " not found in <info-file>\n", a);
       return -3;
     }
 
@@ -293,7 +430,7 @@ int ConvAddInfo(FILE *fIn, FILE *fOut, FILE *fComp)
 
     nInstr++;
 
-    fprintf(fOut, "0x%lX", a); // Output PC value
+    fprintf(fOut, "0x%" PRIX64, a); // Output PC value
     // Append type of instruction to plain PC value
     if (info & INFO_CALL)         fprintf(fOut, ",C");
     else if (info & INFO_RET)     fprintf(fOut, ",R");
@@ -320,7 +457,7 @@ int ConvAddInfo(FILE *fIn, FILE *fOut, FILE *fComp)
     {
       if (!(info & INFO_INDIRECT))
       {
-        fprintf(fOut, ",0x%lX", aa); // Direct address
+        fprintf(fOut, ",0x%" PRIX64, aa); // Direct address
       }
     }
 #endif
@@ -422,4 +559,4 @@ static int ConvBin4(FILE *fIn, FILE *fOut)
 }
 
 //****************************************************************************
-// End of NexRvConv.c file
+// End of cttd_conv.c file

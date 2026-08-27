@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: 2026 Accemic Technologies GmbH
+# SPDX-License-Identifier: ISC
+#
+# REUSE configuration for the files that cannot carry an in-file SPDX header
+# (binary fixtures, upstream material left byte-identical, plain data).
+# Everything else declares itself in its first lines.
+
+version = 1
+SPDX-PackageName = "CEDARtools.TraceDecoder"
+SPDX-PackageSupplier = "Accemic Technologies GmbH <info@accemic.com>"
+SPDX-PackageDownloadLocation = "https://github.com/accemic/CTTD"
+
+# Repository metadata and the test fixtures generated at Accemic.
+[[annotations]]
+path = [".gitignore", ".github/CODEOWNERS", "tests/ctxp/**", "tests/apps/roundtrip/roundtrip-OBJD.txt",
+        "tests/apps/roundtrip/roundtrip.pcinfo", "tests/apps/roundtrip/roundtrip.pconly"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Accemic Technologies GmbH"
+SPDX-License-Identifier = "ISC"
+
+# Example material inherited unchanged from the RISC-V Nexus Trace TG reference
+# code (riscv-non-isa/riscv-nexus-trace, refcode/c/examples, ISC). The RISC-V
+# logo images are that example's test input (the program compresses a bitmap);
+# "RISC-V" is a trademark of RISC-V International and is used only descriptively.
+[[annotations]]
+path = ["examples/t1/test.c", "examples/t1/test-OBJD.txt", "examples/t1/test-PCONLY.txt",
+        "examples/t1/rom-20010000_ram-80000000.lds", "examples/t1/riscvlogo.h",
+        "examples/t1/riscvlogo.bmp", "examples/t1/riscvlogo.png", "examples/t1/makelog.txt",
+        "examples/all/all*.txt", "examples/all/n-trace-compression.png",
+        "examples/all/n-trace-compression.xlsx"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2020 IAR Systems AB"
+SPDX-License-Identifier = "ISC"
+
+# The reference-code overview, CC-BY-4.0 as upstream.
+[[annotations]]
+path = "NexusTraceTG-RefCode.pdf"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2020 IAR Systems AB"
+SPDX-License-Identifier = "CC-BY-4.0"
+
+# SiFive startup file (its in-file notice names the FreeBSD licence).
+[[annotations]]
+path = "examples/t1/crt0.S"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2017-2018 SiFive Inc."
+SPDX-License-Identifier = "BSD-2-Clause-Views"
+
+# The upstream prebuilt example binary: mixed provenance, see the notice.
+[[annotations]]
+path = "examples/t1/test.elf"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2020 IAR Systems AB; xrle: algorithm314; startup files: SiFive Inc.; C library: newlib contributors"
+SPDX-License-Identifier = "LicenseRef-Upstream-t1-Example"

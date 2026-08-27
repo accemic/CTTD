@@ -1,3 +1,7 @@
+<!--
+SPDX-FileCopyrightText: 2026 Accemic Technologies GmbH
+SPDX-License-Identifier: ISC
+-->
 # from_etrace - Third-party benchmark inputs (fetched on demand)
 
 The `examples/all/` compression benchmark runs on a set of RISC-V ELF

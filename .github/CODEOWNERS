@@ -1,0 +1,6 @@
+# GitHub CODEOWNERS -- review routing. Same owners as accemic/TraceEncoder.
+*                       @accemic @albertschulz @accemic-weiss
+/LICENSE                @accemic @albertschulz @accemic-weiss
+/LICENSES/              @accemic @albertschulz @accemic-weiss
+/REUSE.toml             @accemic @albertschulz @accemic-weiss
+/.github/workflows/     @accemic @albertschulz @accemic-weiss

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Accemic Technologies GmbH
+// SPDX-License-Identifier: ISC
 // vim: set ts=4 et:
 // -*- indent-tabs-mode: t; tab-width: 4 -*-
 /*
@@ -16,17 +18,37 @@
 * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
-/*
- * @brief   Exporter for CTXP trace file (.ctxp and .ctxp.txt).
- *
- * Enabled via environment variables:
- *   - CTXP_TRACEFILE       -> binary .ctxp
- *   - CTXP_TEXT_TRACEFILE  -> text   .ctxp.txt
- */
+#include "cttd_export.h"
 
-#ifndef ROOT_NEXRVCTXP_H
-#define ROOT_NEXRVCTXP_H
+#include <stddef.h>
 
-// Intentionally empty. Exporter is activated via constructors.
+#define CTTD_EXPORT_MAX_CALLBACKS 8
 
-#endif // ROOT_NEXRVCTXP_H
+typedef struct ExportSlot {
+  CttdExportCallback cb;
+  void *user_data;
+} ExportSlot;
+
+static ExportSlot g_slots[CTTD_EXPORT_MAX_CALLBACKS];
+static int g_slot_count = 0;
+
+int cttd_export_register(CttdExportCallback cb, void *user_data)
+{
+  if (cb == NULL) return 0;
+  if (g_slot_count >= CTTD_EXPORT_MAX_CALLBACKS) return 0;
+
+  g_slots[g_slot_count].cb = cb;
+  g_slots[g_slot_count].user_data = user_data;
+  g_slot_count++;
+  return 1;
+}
+
+void cttd_export_emit(const CttdExportEvent *event)
+{
+  if (event == NULL) return;
+  for (int i = 0; i < g_slot_count; i++)
+  {
+	if (g_slots[i].cb != NULL)
+	  g_slots[i].cb(event, g_slots[i].user_data);
+  }
+}
