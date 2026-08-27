@@ -1,4 +1,6 @@
 #!/bin/bash -e
+# SPDX-FileCopyrightText: 2026 Accemic Technologies GmbH
+# SPDX-License-Identifier: ISC
 # -*- tab-width:4; indent-tabs-mode:t -*-
 # vim:  tabstop=4:shiftwidth=4:noexpandtab
 #

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2020 IAR Systems AB
+# SPDX-FileCopyrightText: 2026 Accemic Technologies GmbH
+# SPDX-License-Identifier: ISC
 # This is good UM for 'make': https://devhints.io/makefile
 
 # RISC-V objdump from your toolchain (override with: make RV_OBJDUMP=/path/to/objdump).
@@ -78,27 +81,27 @@ endif
 	tar -xjf ./from_etrace/spike/spike.tar.gz $*.spike_pc_trace_filtered
 	touch $*.spike_pc_trace_filtered
 
-%: ./from_etrace/spike/spike.tar.gz ./from_etrace/test_files/%.riscv ../../NexRv.exe
+%: ./from_etrace/spike/spike.tar.gz ./from_etrace/test_files/%.riscv ../../cttd.exe
 	@echo "**** Processing $* ****"
 	@$(MAKE) $*.spike_pc_trace_filtered
 	cp ./$*.spike_pc_trace_filtered ./output/$*-pconly.txt
 	$(RV_OBJDUMP) -d ./from_etrace/test_files/$*.riscv > $*-objd.txt
-	../../NexRv.exe -conv -objd $*-objd.txt -pcinfo output/$*-pcinfo.txt
-	../../NexRv.exe -conv -pcinfo ./output/$*-pcinfo.txt -pconly ./output/$*-pconly.txt -pcseq ./output/$*-pcseq.txt
-	../../NexRv.exe -enco ./output/$*-pcseq.txt -nex ./output/$*-nex.bin $(ENCO_OPT)
-	../../NexRv.exe -dump ./output/$*-nex.bin ./output/$*-dump.txt
-	../../NexRv.exe -deco ./output/$*-nex.bin -pcinfo ./output/$*-pcinfo.txt -pcout ./output/$*-pcout.txt >$*-report.txt
-	../../NexRv.exe -diff -pcseq ./output/$*-pcseq.txt -pcout ./output/$*-pcout.txt
+	../../cttd.exe -conv -objd $*-objd.txt -pcinfo output/$*-pcinfo.txt
+	../../cttd.exe -conv -pcinfo ./output/$*-pcinfo.txt -pconly ./output/$*-pconly.txt -pcseq ./output/$*-pcseq.txt
+	../../cttd.exe -enco ./output/$*-pcseq.txt -nex ./output/$*-nex.bin $(ENCO_OPT)
+	../../cttd.exe -dump ./output/$*-nex.bin ./output/$*-dump.txt
+	../../cttd.exe -deco ./output/$*-nex.bin -pcinfo ./output/$*-pcinfo.txt -pcout ./output/$*-pcout.txt >$*-report.txt
+	../../cttd.exe -diff -pcseq ./output/$*-pcseq.txt -pcout ./output/$*-pcout.txt
 	@echo
 	@echo "**** $* PASSED OK ****"
 	@echo
 
 # You may need to modify this below ...
 t_%:
-	../../NexRv.exe -enco ./output/$*-pcseq.txt -nex ./output/$*-nex.bin $(ENCO_OPT) -full >x.txt
-	../../NexRv.exe -dump ./output/$*-nex.bin ./output/$*-dump.txt
-	../../NexRv.exe -deco ./output/$*-nex.bin -pcinfo ./output/$*-pcinfo.txt -pcout ./output/$*-pcout.txt -full >$*-report.txt
-	../../NexRv.exe -diff -pcseq ./output/$*-pcseq.txt -pcout ./output/$*-pcout.txt
+	../../cttd.exe -enco ./output/$*-pcseq.txt -nex ./output/$*-nex.bin $(ENCO_OPT) -full >x.txt
+	../../cttd.exe -dump ./output/$*-nex.bin ./output/$*-dump.txt
+	../../cttd.exe -deco ./output/$*-nex.bin -pcinfo ./output/$*-pcinfo.txt -pcout ./output/$*-pcout.txt -full >$*-report.txt
+	../../cttd.exe -diff -pcseq ./output/$*-pcseq.txt -pcout ./output/$*-pcout.txt
 
 clean:
 	rm -f *objd.txt *.spike_pc_trace_filtered *-report.txt output/*-*txt output/*-nex.bin

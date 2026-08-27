@@ -1,5 +1,7 @@
+/* SPDX-FileCopyrightText: 2026 Accemic Technologies GmbH */
+/* SPDX-License-Identifier: ISC */
 /*****************************************************************************
- * Tiny RISC-V program for the NexRv encode -> decode round-trip test.
+ * Tiny RISC-V program for the CTTD encode -> decode round-trip test.
  *
  * Deliberately hand-written so every control-flow edge the decoder must
  * reconstruct is exercised in a short, readable trace:

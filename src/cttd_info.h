@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2020 IAR Systems AB
+// SPDX-FileCopyrightText: 2026 Accemic Technologies GmbH
+// SPDX-License-Identifier: ISC
 /*
 * Copyright (c) 2020 IAR Systems AB.
 * Copyright (c) 2026 Accemic Technologies GmbH.
@@ -18,7 +21,7 @@
 */
 
 //****************************************************************************
-// File NexRvInfo.h  - Instruction information access
+// File cttd_info.h  - Instruction information access
 
 #ifndef NEXRVINFO_H
 #define NEXRVINFO_H
@@ -45,4 +48,4 @@ extern void InfoTerm(void);
 #endif  // NEXRVINFO_H
 
 //****************************************************************************
-// End of NexRvInfo.h file
+// End of cttd_info.h file

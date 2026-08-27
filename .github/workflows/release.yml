@@ -1,11 +1,21 @@
+# SPDX-FileCopyrightText: 2026 Accemic Technologies GmbH
+# SPDX-License-Identifier: ISC
 name: Release
 
-# Build the NexRv CLI for Linux x86-64 and arm64.
-#  * Every push to main builds both binaries and uploads them as per-commit
-#    workflow artifacts (download them from that commit's run under the
-#    Actions tab > the run > Artifacts).
-#  * Pushing a version tag (e.g. `git tag v1.2.0 && git push origin v1.2.0`)
-#    additionally publishes the binaries to a GitHub Release.
+# Build the CTTD (CEDARtools.TraceDecoder) CLI for Linux x86-64, Linux arm64
+# (= aarch64, what the KV260 boards run) and Windows x64.
+#  * Every push to main builds all three binaries, uploads them as per-commit
+#    workflow artifacts (Actions tab > the run > Artifacts) and refreshes the
+#    rolling `main-rolling` pre-release.
+#  * Pushing a version tag (`git tag v2.3.0-cttd3 && git push origin v2.3.0-cttd3`)
+#    publishes the binaries plus SHA256SUMS as the assets of a GitHub Release.
+#    Consumers pin a release by tag AND sha256 (CEDARtools.TraceEncoder,
+#    scripts/cttd.pin), so a release with assets is SEALED: the release job
+#    never overwrites an existing asset -- a rebuilt binary with the same
+#    version string can decode differently, and that is exactly what the pin
+#    exists to catch. To re-publish, cut a new tag.
+#  * The version the binary prints comes from `git describe --tags` (makefile),
+#    which is why the checkout below fetches the full history.
 # Also runnable manually via the Actions tab (build only, no release).
 on:
   push:
@@ -25,9 +35,19 @@ jobs:
           - arch: x86_64
             cc: gcc
             apt: ''
+            out: cttd-linux-x86_64
           - arch: arm64
             cc: aarch64-linux-gnu-gcc
             apt: gcc-aarch64-linux-gnu
+            out: cttd-linux-arm64
+          # Windows is cross-built with mingw-w64 rather than on a Windows
+          # runner: CTTD is plain C99 against libc, so the cross build is the
+          # cheaper and more reproducible of the two, and it keeps all three
+          # targets on one runner image.
+          - arch: windows-x64
+            cc: x86_64-w64-mingw32-gcc
+            apt: gcc-mingw-w64-x86-64
+            out: cttd-windows-x64.exe
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,7 +57,7 @@ jobs:
         if: matrix.apt != ''
         run: sudo apt-get update && sudo apt-get install -y ${{ matrix.apt }}
 
-      # Dynamically linked against the system glibc. NexRv only uses libc
+      # Dynamically linked against the system glibc. CTTD only uses libc
       # (stdio/stdlib/string/inttypes), so the only runtime dependency is a
       # glibc at least as new as the build host's. We avoid static linking on
       # purpose: a statically linked glibc binary carries LGPL relinking
@@ -45,18 +65,26 @@ jobs:
       - name: Build
         run: make CC=${{ matrix.cc }}
 
+      # Gate every build on the regression suite (byte-compared round-trips +
+      # golden CTXP exports, see tests/run_tests.sh). Only the natively
+      # runnable x86_64 binary can execute on this runner; the cross-built
+      # targets compile from the identical sources.
+      - name: Regression tests (x86_64 only)
+        if: matrix.arch == 'x86_64'
+        run: bash tests/run_tests.sh
+
       - name: Stage and check artifact
         run: |
           mkdir -p dist
-          cp NexRv.exe dist/NexRv-linux-${{ matrix.arch }}
-          file dist/NexRv-linux-${{ matrix.arch }}
+          cp cttd.exe dist/${{ matrix.out }}
+          file dist/${{ matrix.out }}
 
       # Smoke-test the natively runnable build. Running with no arguments
       # prints usage and exits 1, which is the expected behaviour.
       - name: Smoke test (x86_64 only)
         if: matrix.arch == 'x86_64'
         run: |
-          ./dist/NexRv-linux-x86_64 && rc=0 || rc=$?
+          ./dist/cttd-linux-x86_64 && rc=0 || rc=$?
           if [ "$rc" -ne 1 ]; then
             echo "Expected exit code 1, got $rc"
             exit 1
@@ -64,11 +92,11 @@ jobs:
 
       # Per-commit downloadable binary. The artifact (container) name carries
       # the commit SHA so downloads are self-identifying; the file inside keeps
-      # the clean name NexRv-linux-<arch> that the release job uploads.
+      # the clean name cttd-linux-<arch> that the release job uploads.
       - uses: actions/upload-artifact@v4
         with:
-          name: NexRv-linux-${{ matrix.arch }}-${{ github.sha }}
-          path: dist/NexRv-linux-${{ matrix.arch }}
+          name: ${{ matrix.out }}-${{ github.sha }}
+          path: dist/${{ matrix.out }}
           if-no-files-found: error
           retention-days: 90
 
@@ -85,32 +113,47 @@ jobs:
           path: dist
           merge-multiple: true
 
-      # Idempotent: create the release if it does not exist yet, otherwise
-      # upload the binaries to the existing release (overwriting same-named
-      # assets). This tolerates a release created manually before the tag
-      # push, and safe workflow re-runs.
-      - name: Create release and upload binaries
+      # SHA256SUMS in the sha256sum -c format, next to the binaries: the
+      # consumer's pin carries the same digests, and a reader can verify a
+      # download without this repository's tooling.
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum cttd-linux-x86_64 cttd-linux-arm64 cttd-windows-x64.exe > SHA256SUMS
+          cat SHA256SUMS
+
+      # Create the release if it does not exist yet; if it exists, add only
+      # the assets it does not have. Never --clobber: a published asset is
+      # what consumers pinned by sha256 (see the header). This tolerates a
+      # release created by hand before the tag push and safe workflow
+      # re-runs, and refuses -- loudly -- to replace bytes that are out there.
+      - name: Create release and upload assets
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          set -euo pipefail
+          assets="dist/cttd-linux-x86_64 dist/cttd-linux-arm64 dist/cttd-windows-x64.exe dist/SHA256SUMS"
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            echo "Release ${GITHUB_REF_NAME} exists - uploading assets."
-            gh release upload "${GITHUB_REF_NAME}" \
-              dist/NexRv-linux-x86_64 \
-              dist/NexRv-linux-arm64 \
-              --clobber
+            echo "Release ${GITHUB_REF_NAME} exists - adding only missing assets."
+            have="$(gh release view "${GITHUB_REF_NAME}" --json assets --jq '.assets[].name')"
+            for a in $assets; do
+              n="$(basename "$a")"
+              if echo "$have" | grep -qx "$n"; then
+                echo "  $n: already published, left untouched (sealed by consumer pins)"
+              else
+                gh release upload "${GITHUB_REF_NAME}" "$a"
+              fi
+            done
           else
             echo "Creating release ${GITHUB_REF_NAME}."
-            gh release create "${GITHUB_REF_NAME}" \
-              dist/NexRv-linux-x86_64 \
-              dist/NexRv-linux-arm64 \
+            gh release create "${GITHUB_REF_NAME}" $assets \
               --title "${GITHUB_REF_NAME}" \
               --generate-notes
           fi
 
   rolling:
-    name: Refresh 'latest' pre-release
+    name: Refresh 'main-rolling' pre-release
     needs: build
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'   # every push to main, not on tags
@@ -122,19 +165,25 @@ jobs:
           path: dist
           merge-multiple: true
 
-      # Maintain a single rolling 'latest' pre-release that always carries the
-      # newest main build. Delete + recreate (incl. the tag) so the release,
-      # its tag, and the assets all point at the current commit.
-      - name: Update 'latest' pre-release
+      # A single rolling pre-release that always carries the newest main
+      # build, for people who want to try the head without a release. Delete
+      # + recreate (incl. the tag) so the release, its tag and the assets all
+      # point at the current commit. Nobody pins this: the binaries identify
+      # themselves as `<last tag>-N-g<sha>` (git describe), and the tag name
+      # deliberately is not `latest`, which GitHub uses as a label of its own.
+      - name: Update 'main-rolling' pre-release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release delete latest --cleanup-tag --yes 2>/dev/null || true
-          gh release create latest \
-            dist/NexRv-linux-x86_64 \
-            dist/NexRv-linux-arm64 \
-            --title "Latest main build" \
-            --notes "Rolling build from the latest commit on main (${GITHUB_SHA}). Pre-release — for a fixed version use a tagged release." \
+          cd dist && sha256sum cttd-linux-x86_64 cttd-linux-arm64 cttd-windows-x64.exe > SHA256SUMS && cd ..
+          gh release delete main-rolling --cleanup-tag --yes 2>/dev/null || true
+          gh release create main-rolling \
+            dist/cttd-linux-x86_64 \
+            dist/cttd-linux-arm64 \
+            dist/cttd-windows-x64.exe \
+            dist/SHA256SUMS \
+            --title "Rolling build of main" \
+            --notes "Rolling build from the latest commit on main (${GITHUB_SHA}). Pre-release, not pinned by anything -- for a fixed version use a tagged release." \
             --prerelease \
             --target "${GITHUB_SHA}"

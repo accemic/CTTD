@@ -1,5 +1,10 @@
+// SPDX-FileCopyrightText: 2020 IAR Systems AB
+// SPDX-FileCopyrightText: 2026 Accemic Technologies GmbH
+// SPDX-License-Identifier: ISC
 /*
 * Copyright (c) 2020 IAR Systems AB.
+* Copyright (c) 2026 Accemic Technologies GmbH.
+* Modified from the RISC-V Nexus Trace TG reference code.
 *
 * Permission to use, copy, modify, and distribute this software for any
 * purpose with or without fee is hereby granted, provided that the above
@@ -15,7 +20,7 @@
 */
 
 //****************************************************************************
-// File NexRvInfo.c - Nexus RISC-V instruction info access
+// File cttd_info.c - Nexus RISC-V instruction info access
 
 // Code below is written in plain C-code.
 // It was compiled using VisualC, GNU and IAR C/C++ compiler.
@@ -29,12 +34,22 @@
 #include <ctype.h>  //  For 'isspace/isxdigit' etc.
 #include <inttypes.h>   //  For scan formats SCNx64
 
-#include "NexRvInfo.h"  //  Definition of Nexus messages
+#include "cttd_info.h"  //  Definition of Nexus messages
+#include "cttd_target.h" // Multi-target state movers (InfoDetach/InfoAttach)
 
 // int InfoParse(const char *t, InfoAddr *pAddr, unsigned int *pInfo, InfoAddr *pDest);
 
 static FILE *fInfo = NULL;     // Instruction info (text-based records)
-static InfoAddr prevAddr = 0xFFFFFFFF;
+
+// "Rewind next time" sentinel for the streaming (no-table) lookup below:
+// InfoGet() rewinds whenever addr <= prevAddr, so the sentinel must be
+// GREATER-OR-EQUAL to every possible address. The historical 0xFFFFFFFF was
+// exactly that for RV32, but on RV64 a Sv39 kernel address (0xFFFF_FFC0_...)
+// is larger -- the rewind would silently not happen and the sequential scan
+// would run off the end of the file. Behaviour for RV32 is unchanged (the
+// comparison was, and stays, always true).
+#define INFO_ADDR_REWIND  (~(InfoAddr)0)
+static InfoAddr prevAddr = INFO_ADDR_REWIND;
 
 typedef struct INFO_REC
 {
@@ -53,6 +68,15 @@ typedef struct INFO_ADDR
 static int nInfoRec = 0;
 static int infoLast = 0;
 static INFO_REC *pInfoRec   = NULL;
+// Set at load time when the record table is STRICTLY ascending in address.
+// Only then may InfoGet() bisect instead of scanning: on a strictly ascending
+// table with unique keys both find exactly the same record, so the decode
+// output is bit-for-bit the same -- with duplicates they could pick different
+// records, hence the strict test. Matters on RV64: an Sv39 image splits the
+// address space into a user and a kernel half, the dense table below is then
+// far too large to build, and a linear scan across a multi-million-record
+// table on every backward branch is not viable.
+static int infoSorted = 0;
 
 InfoAddr infoAddr_min = 0;
 InfoAddr infoAddr_max = 0;
@@ -60,7 +84,7 @@ static INFO_ADDR *pInfoAddr  = NULL;
 
 int InfoInit(const char *filename)
 {
-  prevAddr = 0xFFFFFFFF;
+  prevAddr = INFO_ADDR_REWIND;
   fInfo = fopen(filename, "rt");
   if (fInfo == NULL) return -1; // Failed
 
@@ -103,6 +127,17 @@ int InfoInit(const char *filename)
     }
   }
 
+  // Bisection precondition (see infoSorted): strictly ascending addresses.
+  infoSorted = 0;
+  if (pInfoRec != NULL && nInfoRec > 0)
+  {
+    infoSorted = 1;
+    for (int i = 1; i < nInfoRec; i++)
+    {
+      if (pInfoRec[i].addr <= pInfoRec[i - 1].addr) { infoSorted = 0; break; }
+    }
+  }
+
 #if 1 // Generate table with all INFO for all addresses
   if (pInfoRec != NULL)
   {
@@ -110,23 +145,45 @@ int InfoInit(const char *filename)
     infoAddr_min = pInfoRec[0].addr;
     infoAddr_max = pInfoRec[nInfoRec - 1].addr;
 
-    if ((infoAddr_max - infoAddr_min) <= 3 * (nInfoRec * 4))
+    // 64-bit note: the subtraction is unsigned, so an unsorted table (max <
+    // min) wraps to a huge span and fails this test -- which is exactly the
+    // wanted outcome, the dense table is only valid for one contiguous range.
+    // On RV64 the realistic case is a genuinely huge span (Sv39 user/kernel
+    // split); it lands in the same branch and the record lookup takes over.
+    if ((infoAddr_max - infoAddr_min) <= 3 * ((InfoAddr)nInfoRec * 4))
     {
-      printf("NexRv/Info: amin=0x%lX, amax=0x%lX, nRec=%d\n", infoAddr_min, infoAddr_max, nInfoRec);
+      printf("Cttd/Info: amin=0x%" PRIX64 ", amax=0x%" PRIX64 ", nRec=%d\n", infoAddr_min, infoAddr_max, nInfoRec);
 
-      // This is not so big (not more than 3x bigger than original)
-      pInfoAddr = malloc(sizeof(INFO_ADDR) * (infoAddr_max - infoAddr_min + 1));
+      InfoAddr nDense = (infoAddr_max - infoAddr_min) + 1;
 
-      for (int a = 0; a < (infoAddr_max - infoAddr_min + 1); a++)
+      // This is not so big (not more than 3x bigger than original).
+      // Guard the size_t product AND the allocation itself: on RV64 the span
+      // is bounded by the heuristic above but no longer by 2^32, and a failed
+      // malloc used to be dereferenced right below (segfault instead of the
+      // perfectly good record-table fallback).
+      if (nDense <= (InfoAddr)(~(size_t)0) / sizeof(INFO_ADDR))
       {
-        pInfoAddr[a].info = 0;
-        pInfoAddr[a].dest = 0;
+        pInfoAddr = malloc(sizeof(INFO_ADDR) * (size_t)nDense);
       }
 
-      for (int i = 0; i < nInfoRec; i++)
+      if (pInfoAddr != NULL)
       {
-        pInfoAddr[pInfoRec[i].addr - infoAddr_min].info = pInfoRec[i].info;
-        pInfoAddr[pInfoRec[i].addr - infoAddr_min].dest = pInfoRec[i].dest;
+        for (InfoAddr a = 0; a < nDense; a++)
+        {
+          pInfoAddr[a].info = 0;
+          pInfoAddr[a].dest = 0;
+        }
+
+        for (int i = 0; i < nInfoRec; i++)
+        {
+          pInfoAddr[pInfoRec[i].addr - infoAddr_min].info = pInfoRec[i].info;
+          pInfoAddr[pInfoRec[i].addr - infoAddr_min].dest = pInfoRec[i].dest;
+        }
+      }
+      else
+      {
+        printf("Cttd/Info: dense table (%" PRIu64 " entries) not allocatable - using record lookup\n",
+               (uint64_t)nDense);
       }
     }
   }
@@ -146,6 +203,59 @@ void InfoTerm(void)
   pInfoAddr = NULL;
   nInfoRec = 0;
   infoLast = 0;
+}
+
+// Multi-target: move the working statics out into a per-target slot (so the
+// next InfoInit starts from an empty state; ownership of the allocations
+// moves to the slot) ...
+void InfoDetach(CttdInfoState *s)
+{
+  s->fInfo = (void *)fInfo;
+  s->prevAddr = prevAddr;
+  s->nInfoRec = nInfoRec;
+  s->infoLast = infoLast;
+  s->pInfoRec = (void *)pInfoRec;
+  s->pInfoAddr = (void *)pInfoAddr;
+  s->addrMin = infoAddr_min;
+  s->addrMax = infoAddr_max;
+  s->sorted = infoSorted;
+
+  fInfo = NULL;
+  prevAddr = INFO_ADDR_REWIND;
+  nInfoRec = 0;
+  infoLast = 0;
+  pInfoRec = NULL;
+  pInfoAddr = NULL;
+  infoAddr_min = 0;
+  infoAddr_max = 0;
+  infoSorted = 0;
+}
+
+// ... and copy a slot's state back into the working statics. The previously
+// active state must have been detached to its own slot first.
+void InfoAttach(const CttdInfoState *s)
+{
+  fInfo = (FILE *)s->fInfo;
+  prevAddr = s->prevAddr;
+  nInfoRec = s->nInfoRec;
+  infoLast = s->infoLast;
+  pInfoRec = (INFO_REC *)s->pInfoRec;
+  pInfoAddr = (INFO_ADDR *)s->pInfoAddr;
+  infoAddr_min = s->addrMin;
+  infoAddr_max = s->addrMax;
+  infoSorted = s->sorted;
+}
+
+void InfoStateFree(CttdInfoState *s)
+{
+  if (s->fInfo != NULL) fclose((FILE *)s->fInfo);
+  s->fInfo = NULL;
+  if (s->pInfoRec) free(s->pInfoRec);
+  s->pInfoRec = NULL;
+  if (s->pInfoAddr) free(s->pInfoAddr);
+  s->pInfoAddr = NULL;
+  s->nInfoRec = 0;
+  s->infoLast = 0;
 }
 
 int InfoParse(const char *t, InfoAddr *pAddr, unsigned int *pInfo, InfoAddr *pDest)
@@ -195,6 +305,26 @@ unsigned int InfoGet(InfoAddr addr, InfoAddr *pDest)
 
   if (pInfoRec != NULL)
   {
+    if (infoSorted)
+    {
+      // Bisect (strictly ascending table, unique keys -- result-identical to
+      // the scan below). Without this an RV64 image whose span is too large
+      // for the dense table above costs O(nRec) per backward branch.
+      int lo = 0, hi = nInfoRec - 1;
+      while (lo <= hi)
+      {
+        int mid = lo + (hi - lo) / 2;   // no int overflow (nInfoRec is int)
+        if (pInfoRec[mid].addr == addr)
+        {
+          infoLast = mid;
+          if (pDest) *pDest = pInfoRec[mid].dest;
+          return pInfoRec[mid].info;
+        }
+        if (pInfoRec[mid].addr < addr) lo = mid + 1; else hi = mid - 1;
+      }
+      return 0; // Not found ...
+    }
+
     if (addr < pInfoRec[infoLast].addr)
     {
       // Look before ...
@@ -243,10 +373,10 @@ unsigned int InfoGet(InfoAddr addr, InfoAddr *pDest)
       if (info == 0) break;
       if (a == addr) return info; // Found
     }
-    prevAddr = 0xFFFFFFFF;
+    prevAddr = INFO_ADDR_REWIND;
   }
   return 0; // Error (=0)
 }
 
 //****************************************************************************
-// End of NexRvInfo.c file
+// End of cttd_info.c file

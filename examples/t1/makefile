@@ -1,31 +1,34 @@
+# SPDX-FileCopyrightText: 2020 IAR Systems AB
+# SPDX-FileCopyrightText: 2026 Accemic Technologies GmbH
+# SPDX-License-Identifier: ISC
 all:
-	../../NexRv.exe -conv -objd test-OBJD.txt -pcinfo ./output/test-PCINFO.txt
-	../../NexRv.exe -conv -pcinfo ./output/test-PCINFO.txt -pconly test-PCONLY.txt -pcseq ./output/test-PCSEQ.txt
+	../../cttd.exe -conv -objd test-OBJD.txt -pcinfo ./output/test-PCINFO.txt
+	../../cttd.exe -conv -pcinfo ./output/test-PCINFO.txt -pconly test-PCONLY.txt -pcseq ./output/test-PCSEQ.txt
 	echo No Branch History Message - only Direct Branch Message
-	../../NexRv.exe -enco ./output/test-PCSEQ.txt -nex ./output/test-NEX.bin -nobhm
-	../../NexRv.exe -dump ./output/test-NEX.bin ./output/test-DUMP.txt
-	../../NexRv.exe -deco ./output/test-NEX.bin -pcinfo ./output/test-PCINFO.txt -pcout ./output/test-PCOUT.txt
-	../../NexRv.exe -diff -pconly ./test-PCONLY.txt -pcout ./output/test-PCOUT.txt	
+	../../cttd.exe -enco ./output/test-PCSEQ.txt -nex ./output/test-NEX.bin -nobhm
+	../../cttd.exe -dump ./output/test-NEX.bin ./output/test-DUMP.txt
+	../../cttd.exe -deco ./output/test-NEX.bin -pcinfo ./output/test-PCINFO.txt -pcout ./output/test-PCOUT.txt
+	../../cttd.exe -diff -pconly ./test-PCONLY.txt -pcout ./output/test-PCOUT.txt	
 	echo  No Call-stack and no Repeat Message ...
-	../../NexRv.exe -enco ./output/test-PCSEQ.txt -nex ./output/test-NEX.bin -cs 0 -rpt 0
-	../../NexRv.exe -dump ./output/test-NEX.bin ./output/test-DUMP.txt
-	../../NexRv.exe -deco ./output/test-NEX.bin -pcinfo ./output/test-PCINFO.txt -pcout ./output/test-PCOUT.txt
-	../../NexRv.exe -diff -pconly ./test-PCONLY.txt -pcout ./output/test-PCOUT.txt	
+	../../cttd.exe -enco ./output/test-PCSEQ.txt -nex ./output/test-NEX.bin -cs 0 -rpt 0
+	../../cttd.exe -dump ./output/test-NEX.bin ./output/test-DUMP.txt
+	../../cttd.exe -deco ./output/test-NEX.bin -pcinfo ./output/test-PCINFO.txt -pcout ./output/test-PCOUT.txt
+	../../cttd.exe -diff -pconly ./test-PCONLY.txt -pcout ./output/test-PCOUT.txt	
 	echo  No Call-stack and with Repeat Message ...
-	../../NexRv.exe -enco ./output/test-PCSEQ.txt -nex ./output/test-NEX.bin  -cs 0 -rpt 2
-	../../NexRv.exe -dump ./output/test-NEX.bin ./output/test-DUMP.txt
-	../../NexRv.exe -deco ./output/test-NEX.bin -pcinfo ./output/test-PCINFO.txt -pcout ./output/test-PCOUT.txt
-	../../NexRv.exe -diff -pconly ./test-PCONLY.txt -pcout ./output/test-PCOUT.txt	
+	../../cttd.exe -enco ./output/test-PCSEQ.txt -nex ./output/test-NEX.bin  -cs 0 -rpt 2
+	../../cttd.exe -dump ./output/test-NEX.bin ./output/test-DUMP.txt
+	../../cttd.exe -deco ./output/test-NEX.bin -pcinfo ./output/test-PCINFO.txt -pcout ./output/test-PCOUT.txt
+	../../cttd.exe -diff -pconly ./test-PCONLY.txt -pcout ./output/test-PCOUT.txt	
 	echo  With callstack and no repeat
-	../../NexRv.exe -enco ./output/test-PCSEQ.txt -nex ./output/test-NEX.bin -cs 8 -rpt 0
-	../../NexRv.exe -dump ./output/test-NEX.bin ./output/test-DUMP.txt
-	../../NexRv.exe -deco ./output/test-NEX.bin -pcinfo ./output/test-PCINFO.txt -pcout ./output/test-PCOUT.txt
-	../../NexRv.exe -diff -pconly ./test-PCONLY.txt -pcout ./output/test-PCOUT.txt	
+	../../cttd.exe -enco ./output/test-PCSEQ.txt -nex ./output/test-NEX.bin -cs 8 -rpt 0
+	../../cttd.exe -dump ./output/test-NEX.bin ./output/test-DUMP.txt
+	../../cttd.exe -deco ./output/test-NEX.bin -pcinfo ./output/test-PCINFO.txt -pcout ./output/test-PCOUT.txt
+	../../cttd.exe -diff -pconly ./test-PCONLY.txt -pcout ./output/test-PCOUT.txt	
 	echo  With callstack and repeat -best possible compression
-	../../NexRv.exe -enco ./output/test-PCSEQ.txt -nex ./output/test-NEX.bin -cs 8 -rpt 2
-	../../NexRv.exe -dump ./output/test-NEX.bin ./output/test-DUMP.txt
-	../../NexRv.exe -deco ./output/test-NEX.bin -pcinfo ./output/test-PCINFO.txt -pcout ./output/test-PCOUT.txt
-	../../NexRv.exe -diff -pconly ./test-PCONLY.txt -pcout ./output/test-PCOUT.txt	
+	../../cttd.exe -enco ./output/test-PCSEQ.txt -nex ./output/test-NEX.bin -cs 8 -rpt 2
+	../../cttd.exe -dump ./output/test-NEX.bin ./output/test-DUMP.txt
+	../../cttd.exe -deco ./output/test-NEX.bin -pcinfo ./output/test-PCINFO.txt -pcout ./output/test-PCOUT.txt
+	../../cttd.exe -diff -pconly ./test-PCONLY.txt -pcout ./output/test-PCOUT.txt	
 
 ELF:
 	riscv64-unknown-elf-gcc -c -g -fno-builtin -nostdlib -fsigned-char -g -ffunction-sections -fdata-sections -march=rv32imac -mabi=ilp32 -mcmodel=medlow test.c

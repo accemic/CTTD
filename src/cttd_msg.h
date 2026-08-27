@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2020 IAR Systems AB
+// SPDX-FileCopyrightText: 2026 Accemic Technologies GmbH
+// SPDX-License-Identifier: ISC
 /*
 * Copyright (c) 2020 IAR Systems AB.
 * Copyright (c) 2026 Accemic Technologies GmbH.
@@ -18,12 +21,12 @@
 */
 
 //****************************************************************************
-// File NexRvMsg.h  - Nexus RISC-V Trace message definitions (dump & decode)
+// File cttd_msg.h  - Nexus RISC-V Trace message definitions (dump & decode)
 
 #ifndef NEXRVMSG_H
 #define NEXRVMSG_H
 
-#include "NexRv.h"
+#include "cttd.h"
 
 // Macros to define Nexus Messages (NEXM_...)
 //  NOTE: These macros refer to 'NEXUS_TCODE_...' and 'NEXUS_FLDSIZE_...'
@@ -43,6 +46,11 @@ static struct NEXM_MSGDEF_STRU {
   const char *name; // Name of message/field
   int def;          // Definition of field (see NEXM_... above)
 } nexusMsgDef[] = {
+
+  NEXM_BEG(DeviceID, 1),
+    NEXM_VAR(DEVID),
+    NEXM_VAR(TSTAMP),
+  NEXM_END(),
 
   NEXM_BEG(Ownership, 2),
     NEXM_VAR(PROCESS),
@@ -111,6 +119,37 @@ static struct NEXM_MSGDEF_STRU {
     NEXM_VAR(TSTAMP),
   NEXM_END(),
 
+  // TCODE 13/14 (P3): synchronizing 5/6 forms. Field order mirrors the CTTE
+  // wire layout (get_msg_format(): TCODE, [SRC], DSZ, ELSZ, full address,
+  // data, TSTAMP). The address field is deliberately named DADDR -- not ADDR
+  // as the RTL format table's debug label -- so NexusFieldGet() and the
+  // decode_and_check.sh --data machinery treat 5/6 and 13/14 uniformly (the
+  // names here are decoder-local; they have no wire effect). Unlike the 5/6
+  // DADDR (XOR delta when compression is on), this DADDR always carries the
+  // FULL address.
+  NEXM_BEG(DataWriteSync, 13),
+    NEXM_FLD(DSZ, 4),
+    NEXM_FLD(ELSZ, 3),
+    NEXM_ADR(DADDR),
+    NEXM_VAR(DATA),
+    NEXM_VAR(TSTAMP),
+  NEXM_END(),
+
+  NEXM_BEG(DataReadSync, 14),
+    NEXM_FLD(DSZ, 4),
+    NEXM_FLD(ELSZ, 3),
+    NEXM_ADR(DADDR),
+    NEXM_VAR(DATA),
+    NEXM_VAR(TSTAMP),
+  NEXM_END(),
+
+  // TCODE 15 (P4): WPHIT = bitmap of the watchpoints that fired. Variable
+  // length like every other CTTE payload field (leading zeros stripped).
+  NEXM_BEG(Watchpoint, 15),
+    NEXM_VAR(WPHIT),
+    NEXM_VAR(TSTAMP),
+  NEXM_END(),
+
   NEXM_BEG(ResourceFull, 27),
     NEXM_FLD(RCODE, 4),
     NEXM_VAR(RDATA),
@@ -141,6 +180,46 @@ static struct NEXM_MSGDEF_STRU {
     NEXM_VAR(TSTAMP),
   NEXM_END(),
 
+  NEXM_BEG(RepeatInstruction, 31),   // Accemic/ISTO 4.3.14: spin-loop compression
+    NEXM_VAR(RCNT),
+    NEXM_VAR(ICNT),
+    NEXM_VAR(HIST),
+    NEXM_VAR(TSTAMP),
+  NEXM_END(),
+
+  NEXM_BEG(RepeatInstructionSync, 32), // Accemic/ISTO 4.3.15 (synchronizing)
+    NEXM_FLD(SYNC, 4),
+    NEXM_VAR(RCNT),
+    NEXM_VAR(ICNT),
+    NEXM_ADR(FADDR),
+    NEXM_VAR(HIST),
+    NEXM_VAR(TSTAMP),
+  NEXM_END(),
+
+  NEXM_BEG(VendorJTC, 57),        // Accemic: IBH with jump-target-cache index
+    NEXM_FLD(BTYPE, 2),
+    NEXM_VAR(ICNT),
+    NEXM_VAR(JIDX),
+    NEXM_VAR(HIST),
+    NEXM_VAR(TSTAMP),
+  NEXM_END(),
+
+  NEXM_BEG(VendorBP, 56),         // Accemic: BCNT predicted branches + 1 mispredict
+    NEXM_VAR(BCNT),
+    NEXM_VAR(TSTAMP),
+  NEXM_END(),
+
+  NEXM_BEG(VendorConfig, 58),     // Accemic: in-band encoder configuration (v1)
+    NEXM_FLD(CFGVER, 4),
+    NEXM_VAR(CAPS),               // compiled-in feature bitmap
+    NEXM_VAR(ENAB),               // runtime enables (same bit positions)
+    NEXM_VAR(P0),                 // SrcID[15:4] | SrcBits[3:0]
+    NEXM_VAR(P1),                 // InhibitSrc[11] | SyncMax[10:7] | SyncMode[6:3] | InstMode[2:0]
+    NEXM_VAR(P2),                 // TsWidth[11:6] | TsPrescale[5:4] | TsType[3:1] | TsEnable[0]
+    NEXM_VAR(P3),                 // RetStackDepth[12:8] | BpTableLog2[7:4] | JtcIndexBits[3:0]
+    NEXM_VAR(TSTAMP),
+  NEXM_END(),
+
   NEXM_BEG(ProgTraceCorrelation, 33),
     NEXM_FLD(EVCODE, 4),
     NEXM_FLD(CDF, 2),
@@ -155,4 +234,4 @@ static struct NEXM_MSGDEF_STRU {
 #endif  // NEXRVMSG_H
 
 //****************************************************************************
-// End of NexRvMsg.h file
+// End of cttd_msg.h file

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Accemic Technologies GmbH
+// SPDX-License-Identifier: ISC
 // vim: set ts=4 et:
 // -*- indent-tabs-mode: t; tab-width: 4 -*-
 /*
@@ -16,9 +18,9 @@
 * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
-#include "NexRvCTXP.h"
+#include "cttd_ctxp.h"
 
-#include "NexRvExport.h"
+#include "cttd_export.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,7 +32,7 @@ static FILE *g_ctxp_txt = NULL;
 static void ctxp_open_if_env_set(void) __attribute__((constructor));
 static void ctxp_close_files(void) __attribute__((destructor));
 
-static void ctxp_on_event(const NexRvExportEvent *event, void *user_data);
+static void ctxp_on_event(const CttdExportEvent *event, void *user_data);
 
 static void write_u16_le(FILE *f, unsigned int v)
 {
@@ -48,86 +50,91 @@ static void write_u64_le(FILE *f, unsigned long long v)
   (void)fwrite(b, 1, 8, f);
 }
 
-static const char *ctxp_type_to_string(NexRvExportEventType t)
+static const char *ctxp_type_to_string(CttdExportEventType t)
 {
   switch (t)
   {
-	case NEXRV_EXPORT_EVT_SYNC:             return "SYNC";
-	case NEXRV_EXPORT_EVT_BRANCH_TAKEN:     return "BRANCH_TAKEN";
-	case NEXRV_EXPORT_EVT_BRANCH_NOTTAKEN:  return "BRANCH_NOTTAKEN";
-	case NEXRV_EXPORT_EVT_CALL:             return "CALL";
-	case NEXRV_EXPORT_EVT_RETURN:           return "RETURN";
-	case NEXRV_EXPORT_EVT_INTERRUPT:        return "INTERRUPT";
-	case NEXRV_EXPORT_EVT_RFI:              return "RFI";
-	case NEXRV_EXPORT_EVT_OVERFLOW:         return "OVERFLOW";
-	case NEXRV_EXPORT_EVT_CONTEXT:          return "CONTEXT";
-	case NEXRV_EXPORT_EVT_WALLCLOCK:        return "WALLCLOCK";
-	case NEXRV_EXPORT_EVT_INFO1:            return "INFO1";
-	case NEXRV_EXPORT_EVT_INFO2:            return "INFO2";
-	case NEXRV_EXPORT_EVT_INFO3:            return "INFO3";
-	case NEXRV_EXPORT_EVT_MEMREAD_0:        return "MEMREAD_0";
-	case NEXRV_EXPORT_EVT_MEMREAD_1:        return "MEMREAD_1";
-	case NEXRV_EXPORT_EVT_MEMREAD_2:        return "MEMREAD_2";
-	case NEXRV_EXPORT_EVT_MEMREAD_4:        return "MEMREAD_4";
-	case NEXRV_EXPORT_EVT_MEMREAD_8:        return "MEMREAD_8";
-	case NEXRV_EXPORT_EVT_MEMWRITE_0:       return "MEMWRITE_0";
-	case NEXRV_EXPORT_EVT_MEMWRITE_1:       return "MEMWRITE_1";
-	case NEXRV_EXPORT_EVT_MEMWRITE_2:       return "MEMWRITE_2";
-	case NEXRV_EXPORT_EVT_MEMWRITE_4:       return "MEMWRITE_4";
-	case NEXRV_EXPORT_EVT_MEMWRITE_8:       return "MEMWRITE_8";
-	case NEXRV_EXPORT_EVT_DAQ_DATA:         return "DAQ_DATA";
-	case NEXRV_EXPORT_EVT_DAQ_COUNTER:      return "DAQ_COUNTER";
-	case NEXRV_EXPORT_EVT_DAQ_LAST_PC:      return "DAQ_LAST_PC";
+	case CTTD_EXPORT_EVT_SYNC:             return "SYNC";
+	case CTTD_EXPORT_EVT_BRANCH_TAKEN:     return "BRANCH_TAKEN";
+	case CTTD_EXPORT_EVT_BRANCH_NOTTAKEN:  return "BRANCH_NOTTAKEN";
+	case CTTD_EXPORT_EVT_CALL:             return "CALL";
+	case CTTD_EXPORT_EVT_RETURN:           return "RETURN";
+	case CTTD_EXPORT_EVT_INTERRUPT:        return "INTERRUPT";
+	case CTTD_EXPORT_EVT_RFI:              return "RFI";
+	case CTTD_EXPORT_EVT_OVERFLOW:         return "OVERFLOW";
+	case CTTD_EXPORT_EVT_CONTEXT:          return "CONTEXT";
+	case CTTD_EXPORT_EVT_WALLCLOCK:        return "WALLCLOCK";
+	case CTTD_EXPORT_EVT_INFO1:            return "INFO1";
+	case CTTD_EXPORT_EVT_INFO2:            return "INFO2";
+	case CTTD_EXPORT_EVT_INFO3:            return "INFO3";
+	case CTTD_EXPORT_EVT_MEMREAD_0:        return "MEMREAD_0";
+	case CTTD_EXPORT_EVT_MEMREAD_1:        return "MEMREAD_1";
+	case CTTD_EXPORT_EVT_MEMREAD_2:        return "MEMREAD_2";
+	case CTTD_EXPORT_EVT_MEMREAD_4:        return "MEMREAD_4";
+	case CTTD_EXPORT_EVT_MEMREAD_8:        return "MEMREAD_8";
+	case CTTD_EXPORT_EVT_MEMWRITE_0:       return "MEMWRITE_0";
+	case CTTD_EXPORT_EVT_MEMWRITE_1:       return "MEMWRITE_1";
+	case CTTD_EXPORT_EVT_MEMWRITE_2:       return "MEMWRITE_2";
+	case CTTD_EXPORT_EVT_MEMWRITE_4:       return "MEMWRITE_4";
+	case CTTD_EXPORT_EVT_MEMWRITE_8:       return "MEMWRITE_8";
+	case CTTD_EXPORT_EVT_DAQ_DATA:         return "DAQ_DATA";
+	case CTTD_EXPORT_EVT_DAQ_COUNTER:      return "DAQ_COUNTER";
+	case CTTD_EXPORT_EVT_DAQ_LAST_PC:      return "DAQ_LAST_PC";
+	case CTTD_EXPORT_EVT_WATCHPOINT:       return "WATCHPOINT";
 	default:                                return "INFO1";
   }
 }
 
-static unsigned char ctxp_type_to_bin(NexRvExportEventType t)
+static unsigned char ctxp_type_to_bin(CttdExportEventType t)
 {
   // We always emit cycle_count for all events that have a _WITH_TIMESTAMP variant.
   // For OVERFLOW there is no timestamp variant in the v1 spec.
   switch (t)
   {
-	case NEXRV_EXPORT_EVT_SYNC:             return 0x80; // SYNC_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_BRANCH_TAKEN:     return 0x91; // BRANCH_TAKEN_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_BRANCH_NOTTAKEN:  return 0x92; // BRANCH_NOTTAKEN_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_INTERRUPT:        return 0x93; // INTERRUPT_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_RFI:              return 0x95; // RFI_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_CALL:             return 0x96; // CALL_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_RETURN:           return 0x97; // RETURN_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_CONTEXT:          return 0xC0; // CONTEXT_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_WALLCLOCK:        return 0xC1; // WALLCLOCK_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_INFO1:            return 0xF0; // INFO1_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_INFO2:            return 0xF1; // INFO2_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_INFO3:            return 0xF2; // INFO3_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_OVERFLOW:         return 0x5F; // OVERFLOW (no timestamp variant)
-	case NEXRV_EXPORT_EVT_MEMWRITE_0:       return 0xA0; // MEMWRITE_0_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_MEMWRITE_1:       return 0xA1; // MEMWRITE_1_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_MEMWRITE_2:       return 0xA2; // MEMWRITE_2_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_MEMWRITE_4:       return 0xA4; // MEMWRITE_4_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_MEMWRITE_8:       return 0xA8; // MEMWRITE_8_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_MEMREAD_0:        return 0xB0; // MEMREAD_0_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_MEMREAD_1:        return 0xB1; // MEMREAD_1_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_MEMREAD_2:        return 0xB2; // MEMREAD_2_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_MEMREAD_4:        return 0xB4; // MEMREAD_4_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_MEMREAD_8:        return 0xB8; // MEMREAD_8_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_DAQ_DATA:         return 0xE0; // DAQ_DATA_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_DAQ_COUNTER:      return 0xE1; // DAQ_COUNTER_WITH_TIMESTAMP
-	case NEXRV_EXPORT_EVT_DAQ_LAST_PC:      return 0xE2; // DAQ_LAST_PC_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_SYNC:             return 0x80; // SYNC_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_BRANCH_TAKEN:     return 0x91; // BRANCH_TAKEN_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_BRANCH_NOTTAKEN:  return 0x92; // BRANCH_NOTTAKEN_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_INTERRUPT:        return 0x93; // INTERRUPT_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_RFI:              return 0x95; // RFI_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_CALL:             return 0x96; // CALL_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_RETURN:           return 0x97; // RETURN_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_CONTEXT:          return 0xC0; // CONTEXT_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_WALLCLOCK:        return 0xC1; // WALLCLOCK_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_INFO1:            return 0xF0; // INFO1_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_INFO2:            return 0xF1; // INFO2_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_INFO3:            return 0xF2; // INFO3_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_OVERFLOW:         return 0x5F; // OVERFLOW (no timestamp variant)
+	case CTTD_EXPORT_EVT_MEMWRITE_0:       return 0xA0; // MEMWRITE_0_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_MEMWRITE_1:       return 0xA1; // MEMWRITE_1_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_MEMWRITE_2:       return 0xA2; // MEMWRITE_2_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_MEMWRITE_4:       return 0xA4; // MEMWRITE_4_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_MEMWRITE_8:       return 0xA8; // MEMWRITE_8_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_MEMREAD_0:        return 0xB0; // MEMREAD_0_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_MEMREAD_1:        return 0xB1; // MEMREAD_1_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_MEMREAD_2:        return 0xB2; // MEMREAD_2_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_MEMREAD_4:        return 0xB4; // MEMREAD_4_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_MEMREAD_8:        return 0xB8; // MEMREAD_8_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_DAQ_DATA:         return 0xE0; // DAQ_DATA_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_DAQ_COUNTER:      return 0xE1; // DAQ_COUNTER_WITH_TIMESTAMP
+	case CTTD_EXPORT_EVT_DAQ_LAST_PC:      return 0xE2; // DAQ_LAST_PC_WITH_TIMESTAMP
+	// CTTE proposal (P4): the external CTXP format doc does not list a
+	// Watchpoint record yet -- 0xE3 continues the instrumentation family
+	// and is the code this decoder writes. Text export carries the name.
+	case CTTD_EXPORT_EVT_WATCHPOINT:       return 0xE3; // WATCHPOINT_WITH_TIMESTAMP
 	default:                                return 0xF0;
   }
 }
 
 // True for events whose `value1` is an address that may be "omitted"
 // (value-only data capture): MEMREAD_1/2/4/8 and MEMWRITE_1/2/4/8.
-static int ctxp_is_sized_mem(NexRvExportEventType t)
+static int ctxp_is_sized_mem(CttdExportEventType t)
 {
   switch (t)
   {
-	case NEXRV_EXPORT_EVT_MEMREAD_1: case NEXRV_EXPORT_EVT_MEMREAD_2:
-	case NEXRV_EXPORT_EVT_MEMREAD_4: case NEXRV_EXPORT_EVT_MEMREAD_8:
-	case NEXRV_EXPORT_EVT_MEMWRITE_1: case NEXRV_EXPORT_EVT_MEMWRITE_2:
-	case NEXRV_EXPORT_EVT_MEMWRITE_4: case NEXRV_EXPORT_EVT_MEMWRITE_8:
+	case CTTD_EXPORT_EVT_MEMREAD_1: case CTTD_EXPORT_EVT_MEMREAD_2:
+	case CTTD_EXPORT_EVT_MEMREAD_4: case CTTD_EXPORT_EVT_MEMREAD_8:
+	case CTTD_EXPORT_EVT_MEMWRITE_1: case CTTD_EXPORT_EVT_MEMWRITE_2:
+	case CTTD_EXPORT_EVT_MEMWRITE_4: case CTTD_EXPORT_EVT_MEMWRITE_8:
 	  return 1;
 	default:
 	  return 0;
@@ -135,19 +142,20 @@ static int ctxp_is_sized_mem(NexRvExportEventType t)
 }
 
 // True for events that carry only `value2` (value1 column empty in text):
-// SYNC, DAQ_DATA, DAQ_LAST_PC.
-static int ctxp_value2_only(NexRvExportEventType t)
+// SYNC, DAQ_DATA, DAQ_LAST_PC, WATCHPOINT (the WPHIT bitmap).
+static int ctxp_value2_only(CttdExportEventType t)
 {
-  return t == NEXRV_EXPORT_EVT_SYNC ||
-		 t == NEXRV_EXPORT_EVT_DAQ_DATA ||
-		 t == NEXRV_EXPORT_EVT_DAQ_LAST_PC;
+  return t == CTTD_EXPORT_EVT_SYNC ||
+		 t == CTTD_EXPORT_EVT_DAQ_DATA ||
+		 t == CTTD_EXPORT_EVT_DAQ_LAST_PC ||
+		 t == CTTD_EXPORT_EVT_WATCHPOINT;
 }
 
 // True for events that carry only `value1` (value2 column empty in text):
 // MEMREAD_0, MEMWRITE_0 (address, no value).
-static int ctxp_value1_only(NexRvExportEventType t)
+static int ctxp_value1_only(CttdExportEventType t)
 {
-  return t == NEXRV_EXPORT_EVT_MEMREAD_0 || t == NEXRV_EXPORT_EVT_MEMWRITE_0;
+  return t == CTTD_EXPORT_EVT_MEMREAD_0 || t == CTTD_EXPORT_EVT_MEMWRITE_0;
 }
 
 #pragma pack(push, 1)
@@ -160,14 +168,14 @@ typedef struct CtxpTraceEvent {
 } CtxpTraceEvent;
 #pragma pack(pop)
 
-static void ctxp_write_text_event(FILE *f, const NexRvExportEvent *event)
+static void ctxp_write_text_event(FILE *f, const CttdExportEvent *event)
 {
   const char *type_str = ctxp_type_to_string(event->type);
   unsigned int sid = (unsigned int)event->source_id;
 
   // Colons are always present. For events that do not provide a value, keep field empty.
   // We always print cycle_count.
-  if (event->type == NEXRV_EXPORT_EVT_OVERFLOW)
+  if (event->type == CTTD_EXPORT_EVT_OVERFLOW)
   {
 	// No payloads
 	fprintf(f, "#%u:%s:: @ %llu\n",
@@ -190,7 +198,7 @@ static void ctxp_write_text_event(FILE *f, const NexRvExportEvent *event)
 			(unsigned long long)event->value1,
 			(unsigned long long)event->cycle_count);
   }
-  else if (ctxp_is_sized_mem(event->type) && event->value1 == NEXRV_EXPORT_ADDR_OMITTED)
+  else if (ctxp_is_sized_mem(event->type) && event->value1 == CTTD_EXPORT_ADDR_OMITTED)
   {
 	// Sized memory access with unknown address (value-only capture): value1 empty.
 	fprintf(f, "#%u:%s::0x%llx @ %llu\n",
@@ -208,7 +216,7 @@ static void ctxp_write_text_event(FILE *f, const NexRvExportEvent *event)
   }
 }
 
-static void ctxp_write_binary_event(FILE *f, const NexRvExportEvent *event)
+static void ctxp_write_binary_event(FILE *f, const CttdExportEvent *event)
 {
   CtxpTraceEvent e;
   memset(&e, 0, sizeof(e));
@@ -218,7 +226,7 @@ static void ctxp_write_binary_event(FILE *f, const NexRvExportEvent *event)
 
   // Map payload semantics. value2-only events (SYNC, DAQ_DATA, DAQ_LAST_PC)
   // leave value1 unused (zero). Everything else passes value1/value2 through —
-  // including the NEXRV_EXPORT_ADDR_OMITTED sentinel that the spec defines as
+  // including the CTTD_EXPORT_ADDR_OMITTED sentinel that the spec defines as
   // the binary "address omitted" marker for sized memory accesses.
   if (ctxp_value2_only(event->type))
   {
@@ -301,7 +309,7 @@ static void ctxp_open_if_env_set(void)
 
   if (g_ctxp_bin != NULL || g_ctxp_txt != NULL)
   {
-	(void)nexrv_export_register(ctxp_on_event, NULL);
+	(void)cttd_export_register(ctxp_on_event, NULL);
   }
   else
   {
@@ -329,7 +337,7 @@ static void ctxp_close_files(void)
   }
 }
 
-static void ctxp_on_event(const NexRvExportEvent *event, void *user_data)
+static void ctxp_on_event(const CttdExportEvent *event, void *user_data)
 {
   (void)user_data;
   if (event == NULL) return;

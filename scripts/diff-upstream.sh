@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# Diff this NexRv fork against the upstream tg-nexus-trace refcode/c/.
+# SPDX-FileCopyrightText: 2026 Accemic Technologies GmbH
+# SPDX-License-Identifier: ISC
+# Diff this CTTD tree against the upstream riscv-nexus-trace refcode/c/ it derives from.
 #
-# Clones or updates ./upstream/tg-nexus-trace, checks out the latest upstream
+# Clones or updates ./upstream/riscv-nexus-trace, checks out the latest upstream
 # revision, and launches `git difftool --dir-diff` between the upstream
 # refcode/c/ directory and this fork's src/.
 #
 # Environment overrides:
 #   NEXRV_UPSTREAM_URL  - upstream git URL
-#                         (default: https://github.com/riscv-non-isa/tg-nexus-trace.git)
+#                         (default: https://github.com/riscv-non-isa/riscv-nexus-trace.git)
 #   NEXRV_UPSTREAM_REF  - upstream revision to compare against
-#                         (default: origin/master)
+#                         (default: origin/HEAD, i.e. upstream's default branch)
 #
 # Requires `git difftool --dir-diff` to be configured (e.g. `git config --global
 # diff.tool meld`). The upstream clone lives under ./upstream/ which is
@@ -22,8 +24,8 @@ set -euo pipefail
 SCRIPT_PATH="$(readlink -f "$0" 2>/dev/null || python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$0")"
 REPO_ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 
-UPSTREAM_URL="${NEXRV_UPSTREAM_URL:-https://github.com/riscv-non-isa/tg-nexus-trace.git}"
-UPSTREAM_DIR="${REPO_ROOT}/upstream/tg-nexus-trace"
+UPSTREAM_URL="${NEXRV_UPSTREAM_URL:-https://github.com/riscv-non-isa/riscv-nexus-trace.git}"
+UPSTREAM_DIR="${REPO_ROOT}/upstream/riscv-nexus-trace"
 # Default to whatever the upstream considers its default branch (main, master,
 # etc.). origin/HEAD is a symbolic ref set by `git clone`.
 UPSTREAM_REF="${NEXRV_UPSTREAM_REF:-origin/HEAD}"

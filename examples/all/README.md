@@ -1,3 +1,7 @@
+<!--
+SPDX-FileCopyrightText: 2026 Accemic Technologies GmbH
+SPDX-License-Identifier: ISC
+-->
 # N-Trace Compression Tests
 
 This directory includes everything to re-run these tests on an Ubuntu system. The third-party
@@ -43,4 +47,4 @@ licenses).
 * `./from_etrace/fetch.sh` - Fetch benchmark inputs once (required before the targets below)
 * `make`              - Run best compression test (statistics in all.txt file)
 * `make tst`          - Run all 5 test configurations (all statistics in all?.txt files)
-* `make clear`        - Clean all temporary files
+* `make clean`        - Clean all temporary files
