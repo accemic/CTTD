@@ -15,9 +15,9 @@ CTTD is Accemic's trace decoder. It started as a fork of NexRv, the Nexus
 Trace TG reference decoder, and has since grown well past what that name
 describes -- which is why the name changed:
 
-- **Nexus is no longer the whole story.** CTTD already decodes the CTXP export
-  format, data-trace messages, vendor TCODEs, branch prediction and multi-source
-  (SRC) streams; the Nexus message set is one input format among several.
+- **Nexus is no longer the whole story.** CTTD already decodes E-Trace, 
+  data-trace messages, vendor TCODEs, branch prediction and multi-source (SRC) streams; 
+  the Nexus message set is one input format among several.
 - **More source formats are planned:** Infineon AURIX and ARM ETM trace are the
   next targets. A name built on "Nexus RISC-V" would misdescribe the tool.
 - CTTD is the decoding counterpart to
