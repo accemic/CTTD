@@ -64,6 +64,19 @@ static Nexus_TypeAddr GetParAddr(const char *l)
   return addr;
 }
 
+/* A conditional branch: beq/bne/blt/bge/bltu/bgeu and the pseudos objdump prints for them
+ * (beqz/bnez/blez/bgez/bltz/bgtz/bgt/ble/bgtu/bleu) -- all have 'e', 'n', 'l' or 'g' as the
+ * second letter. The bit-manipulation ops that also start with 'b' (Zbs bset/bclr/binv/bext,
+ * Zbb/Zbkb brev8, bclmul, ...) do not, except bext, which is told apart from beq* by its
+ * third letter. Checking instr[4] != 'i' is not enough: objdump prints bseti/bclri/binvi/bexti
+ * without the 'i' (e.g. "bset a5,a5,0x2d"), so the immediate would be read as a branch target. */
+static int IsCondBranch(const char *instr)
+{
+  if (instr[0] != 'b') return 0;
+  if (instr[1] == 'e' && instr[2] == 'x') return 0;   /* bext, bexti */
+  return instr[1] == 'e' || instr[1] == 'n' || instr[1] == 'l' || instr[1] == 'g';
+}
+
 int ConvRtlTrace(FILE *fIn, FILE *fOut)
 {
   char line[1000];
@@ -209,8 +222,7 @@ int ConvGnuObjdump(FILE *fObjd, FILE *fPcInfo)
       else if (m[0] == 'j')                                             iType = "JD"; // c.j
       else if (m[0] == 'b' && (m[1] == 'e' || m[1] == 'n'))             iType = "BD"; // c.beqz/c.bnez
     }
-    else if (instr[0] == 'j' || (instr[0] == 'b' && instr[4] != 'i'))
-      // That 'i' for for bseti/bclri/bexti/binvi - see https://github.com/riscv/riscv-opcodes/blob/master/rv32_zbs
+    else if (instr[0] == 'j' || IsCondBranch(instr))
     {
       // "j <a>" or "jal <r>,<a>" or "jr <r>" or "jalr <r>"
       // "b?? ...<a>
@@ -236,7 +248,7 @@ int ConvGnuObjdump(FILE *fObjd, FILE *fPcInfo)
       }
       else
       {
-        if (instr[0] == 'b')                    iType = "BD"; // Branch direct
+        if (IsCondBranch(instr))                iType = "BD"; // Branch direct
         if (instr[0] == 'j' && instr[1] != 'a') iType = "JD"; // Jump direct (j, alias)
         if (instr[0] == 'j' && instr[1] == 'a')
         {
